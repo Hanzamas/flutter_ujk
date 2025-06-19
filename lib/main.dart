@@ -60,10 +60,10 @@ void main() async {
       MaterialApp(
         title: 'Tourism Indonesia',
         theme: ThemeData(
-          primarySwatch: Colors.blue,
-          primaryColor: AppColors.primary,
-          scaffoldBackgroundColor: AppColors.background,
-          useMaterial3: true,
+          // primarySwatch: Colors.blue,
+          // primaryColor: AppColors.primary,
+          // scaffoldBackgroundColor: AppColors.background,
+          // useMaterial3: true,
         ),
         home: Scaffold(
           body: Center(
