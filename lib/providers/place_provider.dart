@@ -17,9 +17,10 @@ class PlaceProvider extends ChangeNotifier {
   String _selectedCity = 'all';
   String _searchQuery = '';
   bool _isLoading = false;
+  bool _isInitialized = false;
   String? _errorMessage;
 
-  // ✅ GETTERS
+  // GETTERS
   List<PlaceModel> get places => _getFilteredPlaces();
   List<PlaceModel> get allPlaces => _places;
   List<String> get cities => _cities;
@@ -28,35 +29,47 @@ class PlaceProvider extends ChangeNotifier {
   String get selectedCity => _selectedCity;
   String get searchQuery => _searchQuery;
   bool get isLoading => _isLoading;
+  bool get isInitialized => _isInitialized;
   String? get errorMessage => _errorMessage;
   bool get hasPlaces => _places.isNotEmpty;
   int get placesCount => _places.length;
   int get filteredPlacesCount => _getFilteredPlaces().length;
 
-  // ✅ NETWORK STATUS
-  bool get isOnline => _connectivityService?.isOnline ?? false;
-  bool get isOffline => _connectivityService?.isOffline ?? true;
+  bool get isOnline => _connectivityService?.isOnline ?? true;
+  bool get isOffline => _connectivityService?.isOffline ?? false;
   String get networkStatus => _connectivityService?.connectionType ?? 'Unknown';
 
   PlaceProvider() {
-    _initializeData();
+    _loadCategories();
+    print('✅ PlaceProvider basic initialization completed');
   }
 
   void setConnectivityService(ConnectivityService connectivityService) {
+    if (_connectivityService != null) return; // ✅ Prevent duplicate injection
+    
     _connectivityService = connectivityService;
     print('🌐 ConnectivityService injected into PlaceProvider');
     connectivityService.addListener(_onNetworkChanged);
+    
+    if (!_isInitialized) {
+      _initializeData();
+    }
   }
 
   Future<void> _initializeData() async {
+    if (_isInitialized) return;
+    
     try {
       _setLoading(true);
-      _loadCategories();
+      print('🚀 Starting data initialization...');
+      
       await loadPlaces();
       await loadCities();
-      print('✅ PlaceProvider initialized successfully');
+      
+      _isInitialized = true;
+      print('✅ PlaceProvider initialization completed');
     } catch (e) {
-      print('❌ Error initializing PlaceProvider: $e');
+      print('❌ Error in initialization: $e');
       _setError('Failed to initialize data: $e');
     } finally {
       _setLoading(false);
@@ -69,17 +82,15 @@ class PlaceProvider extends ChangeNotifier {
     }
   }
 
-  /// ✅ FIX: Improved load places with better state management
   Future<void> loadPlaces({bool forceRefresh = false}) async {
     if (_isLoading && !forceRefresh) return;
     
     _setLoading(true);
-    _clearError(); // ✅ Clear error at start
+    _clearError();
     
     try {
       print('📊 Loading places... (online: $isOnline)');
       
-      // ✅ Try to load from Firestore (cache or online)
       final querySnapshot = await _firestoreService.streamAllPlaces().first;
       _places = querySnapshot.docs
           .map((doc) => PlaceModel.fromFirestore(doc))
@@ -87,38 +98,29 @@ class PlaceProvider extends ChangeNotifier {
       
       _places.sort((a, b) => a.name.compareTo(b.name));
       
-      // ✅ FIX: Clear error if we successfully got data
       if (_places.isNotEmpty) {
-        _clearError(); // ✅ Clear any previous errors
-        
+        _clearError();
         if (isOffline) {
-          // Show offline info but not as error
-          print('📦 Successfully loaded ${_places.length} places from Firestore cache');
+          print('📦 Successfully loaded ${_places.length} places from cache');
         } else {
           await _connectivityService?.updateLastSyncTime();
           print('✅ Successfully loaded ${_places.length} places from Firestore');
         }
       } else {
-        // ✅ Only set error if no data available
-        if (isOffline) {
-          _setError('No offline data available. Please connect to internet.');
-        } else {
-          _setError('No places found. Try creating sample data.');
-        }
+        print('📭 No places found in Firestore');
+        _setError(isOffline 
+            ? 'No offline data available. Please connect to internet.'
+            : 'No places found. Try creating sample data.');
       }
       
     } catch (e) {
       print('❌ Error loading places: $e');
       
-      // ✅ Only show error if we don't have any data
       if (_places.isEmpty) {
-        if (isOffline) {
-          _setError('No offline data available. Please connect to internet.');
-        } else {
-          _setError('Failed to load data. Check your connection.');
-        }
+        _setError(e.toString().contains('offline') || e.toString().contains('network')
+            ? 'No offline data available. Please connect to internet.'
+            : 'Failed to load data. Please try again.');
       } else {
-        // We have cached data, just show a subtle warning
         print('⚠️ Using cached data due to error: $e');
       }
     } finally {
@@ -152,7 +154,12 @@ class PlaceProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ✅ Rest of filtering methods remain the same...
+  Future<void> initialize() async {
+    if (!_isInitialized) {
+      await _initializeData();
+    }
+  }
+
   List<PlaceModel> _getFilteredPlaces() {
     List<PlaceModel> filteredPlaces = List.from(_places);
 
@@ -185,7 +192,6 @@ class PlaceProvider extends ChangeNotifier {
   void setSelectedCategory(String categoryId) {
     if (_selectedCategory != categoryId) {
       _selectedCategory = categoryId;
-      print('🔍 Category filter set to: $categoryId');
       notifyListeners();
     }
   }
@@ -193,7 +199,6 @@ class PlaceProvider extends ChangeNotifier {
   void setSelectedCity(String city) {
     if (_selectedCity != city) {
       _selectedCity = city;
-      print('🔍 City filter set to: $city');
       notifyListeners();
     }
   }
@@ -201,7 +206,6 @@ class PlaceProvider extends ChangeNotifier {
   void searchPlaces(String query) {
     if (_searchQuery != query.toLowerCase()) {
       _searchQuery = query.toLowerCase();
-      print('🔍 Search query: $_searchQuery');
       notifyListeners();
     }
   }
@@ -209,36 +213,10 @@ class PlaceProvider extends ChangeNotifier {
   void clearSearch() {
     if (_searchQuery.isNotEmpty) {
       _searchQuery = '';
-      print('🔍 Search cleared');
       notifyListeners();
     }
   }
 
-  void clearAllFilters() {
-    bool hasChanges = false;
-    
-    if (_selectedCategory != 'all') {
-      _selectedCategory = 'all';
-      hasChanges = true;
-    }
-    
-    if (_selectedCity != 'all') {
-      _selectedCity = 'all';
-      hasChanges = true;
-    }
-    
-    if (_searchQuery.isNotEmpty) {
-      _searchQuery = '';
-      hasChanges = true;
-    }
-    
-    if (hasChanges) {
-      print('🔍 All filters cleared');
-      notifyListeners();
-    }
-  }
-
-  // ✅ CRUD Operations remain the same...
   Future<bool> createPlace(PlaceModel place) async {
     if (isOffline) {
       _setError('Cannot create places while offline');
@@ -261,11 +239,9 @@ class PlaceProvider extends ChangeNotifier {
       await loadCities();
       await _connectivityService?.updateLastSyncTime();
       
-      print('✅ Created place: ${newPlace.name}');
       notifyListeners();
       return true;
     } catch (e) {
-      print('❌ Error creating place: $e');
       _setError('Failed to create place: $e');
       return false;
     } finally {
@@ -298,11 +274,9 @@ class PlaceProvider extends ChangeNotifier {
       await loadCities();
       await _connectivityService?.updateLastSyncTime();
       
-      print('✅ Updated place: ${updatedPlace.name}');
       notifyListeners();
       return true;
     } catch (e) {
-      print('❌ Error updating place: $e');
       _setError('Failed to update place: $e');
       return false;
     } finally {
@@ -316,7 +290,6 @@ class PlaceProvider extends ChangeNotifier {
       return false;
     }
 
-    final placeToDelete = getPlaceById(placeId);
     _setLoading(true);
     _clearError();
     
@@ -331,11 +304,9 @@ class PlaceProvider extends ChangeNotifier {
       await loadCities();
       await _connectivityService?.updateLastSyncTime();
       
-      print('✅ Deleted place: ${placeToDelete?.name ?? placeId}');
       notifyListeners();
       return true;
     } catch (e) {
-      print('❌ Error deleting place: $e');
       _setError('Failed to delete place: $e');
       return false;
     } finally {
@@ -344,18 +315,15 @@ class PlaceProvider extends ChangeNotifier {
   }
 
   Future<void> refresh({bool forceRefresh = true}) async {
-    print('🔄 Refreshing PlaceProvider data...');
+    print('🔄 Refreshing data...');
     
     try {
       await Future.wait([
         loadPlaces(forceRefresh: forceRefresh),
         loadCities(),
       ]);
-      
-      print('✅ PlaceProvider refresh completed');
     } catch (e) {
       print('❌ Error during refresh: $e');
-      // Don't set error here if we have data
       if (_places.isEmpty) {
         _setError('Failed to refresh data: $e');
       }
@@ -374,16 +342,13 @@ class PlaceProvider extends ChangeNotifier {
     try {
       await SamplePlacesData.createSamplePlaces();
       await refresh();
-      print('✅ Sample data created successfully');
     } catch (e) {
-      print('❌ Error creating sample data: $e');
       _setError('Failed to create sample data: $e');
     } finally {
       _setLoading(false);
     }
   }
 
-  // Query methods
   PlaceModel? getPlaceById(String placeId) {
     try {
       return _places.firstWhere((place) => place.id == placeId);
@@ -392,29 +357,6 @@ class PlaceProvider extends ChangeNotifier {
     }
   }
 
-  List<PlaceModel> getPlacesByCity(String city) {
-    if (city == 'all') return _places;
-    return _places
-        .where((place) => place.city.toLowerCase() == city.toLowerCase())
-        .toList();
-  }
-
-  List<PlaceModel> getPlacesByCategory(String category) {
-    if (category == 'all') return _places;
-    return _places
-        .where((place) => place.category.toLowerCase() == category.toLowerCase())
-        .toList();
-  }
-
-  Stream<List<PlaceModel>> streamPlaces() {
-    return _firestoreService.streamAllPlaces().map(
-      (querySnapshot) => querySnapshot.docs
-          .map((doc) => PlaceModel.fromFirestore(doc))
-          .toList(),
-    );
-  }
-
-  // Helper methods
   void _setLoading(bool loading) {
     if (_isLoading != loading) {
       _isLoading = loading;
@@ -425,7 +367,6 @@ class PlaceProvider extends ChangeNotifier {
   void _setError(String error) {
     if (_errorMessage != error) {
       _errorMessage = error;
-      print('⚠️ PlaceProvider Error: $error');
       notifyListeners();
     }
   }
@@ -437,14 +378,9 @@ class PlaceProvider extends ChangeNotifier {
     }
   }
 
-  void clearError() {
-    _clearError();
-  }
-
   @override
   void dispose() {
     _connectivityService?.removeListener(_onNetworkChanged);
-    print('🗑️ PlaceProvider disposed');
     super.dispose();
   }
 }

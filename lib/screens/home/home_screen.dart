@@ -20,12 +20,10 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen>
-    with TickerProviderStateMixin {
+class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   final _searchController = TextEditingController();
   final SensorService _sensorService = SensorService();
   
-  // Animation controllers
   late AnimationController _shakeAnimationController;
   late Animation<double> _shakeAnimation;
   
@@ -37,8 +35,9 @@ class _HomeScreenState extends State<HomeScreen>
     super.initState();
     _initializeAnimations();
     _setupShakeDetection();
+    
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<PlaceProvider>().refresh();
+      _initializeData();
     });
   }
 
@@ -59,12 +58,26 @@ class _HomeScreenState extends State<HomeScreen>
 
   void _setupShakeDetection() async {
     final available = await _sensorService.initialize();
-    setState(() {
-      _sensorAvailable = available;
-    });
+    if (mounted) {
+      setState(() {
+        _sensorAvailable = available;
+      });
+      
+      if (available) {
+        _sensorService.startShakeDetection(_onShakeDetected);
+      }
+    }
+  }
+
+  Future<void> _initializeData() async {
+    final placeProvider = context.read<PlaceProvider>();
     
-    if (available) {
-      _sensorService.startShakeDetection(_onShakeDetected);
+    if (!placeProvider.isInitialized) {
+      await placeProvider.initialize();
+    }
+    
+    if (placeProvider.places.isEmpty) {
+      await placeProvider.refresh();
     }
   }
 
@@ -74,12 +87,16 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Future<void> _performShakeRefresh() async {
+    if (!mounted) return;
+    
     setState(() {
       _isRefreshing = true;
     });
 
     _shakeAnimationController.forward().then((_) {
-      _shakeAnimationController.reverse();
+      if (mounted) {
+        _shakeAnimationController.reverse();
+      }
     });
 
     try {
@@ -133,47 +150,62 @@ class _HomeScreenState extends State<HomeScreen>
 
   @override
   Widget build(BuildContext context) {
-    // ✅ WRAP: With SwipeablePage
     return SwipeablePage(
       currentRoute: AppRoutes.homeName,
-      child: AnimatedBuilder(
-        animation: _shakeAnimation,
-        builder: (context, child) {
-          return Transform.translate(
-            offset: Offset(_shakeAnimation.value, 0),
-            child: Scaffold(
-              backgroundColor: AppColors.background,
-              appBar: AppBar(
-                backgroundColor: AppColors.surface,
-                elevation: 0,
-                title: Consumer<AuthProvider>(
-                  builder: (context, authProvider, child) {
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Hello, ${authProvider.currentUser?.displayNameOrEmail ?? 'Explorer'}',
-                          style: const TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                        Row(
+      child: SafeArea(
+        child: AnimatedBuilder(
+          animation: _shakeAnimation,
+          builder: (context, child) {
+            return Transform.translate(
+              offset: Offset(_shakeAnimation.value, 0),
+              child: Scaffold(
+                backgroundColor: AppColors.background,
+                
+                appBar: PreferredSize(
+                  preferredSize: const Size.fromHeight(kToolbarHeight),
+                  child: AppBar(
+                    backgroundColor: AppColors.surface,
+                    elevation: 0,
+                    automaticallyImplyLeading: false,
+                    titleSpacing: 16,
+                    title: Consumer<AuthProvider>(
+                      builder: (context, authProvider, child) {
+                        return Row(
                           children: [
-                            const Text(
-                              'Discover amazing places',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: AppColors.textSecondary,
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    'Hello, ${_getShortName(authProvider.currentUser?.displayNameOrEmail ?? 'Explorer')}',
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const Text(
+                                    'Discover amazing places',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
                               ),
                             ),
-                            if (_sensorAvailable) ...[
-                              const SizedBox(width: 8),
+                            
+                            if (_sensorAvailable)
                               Container(
+                                margin: const EdgeInsets.only(left: 8),
                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                 decoration: BoxDecoration(
-                                  color: AppColors.success.withOpacity(0.2),
+                                  color: AppColors.success.withOpacity(0.1),
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: Row(
@@ -182,7 +214,7 @@ class _HomeScreenState extends State<HomeScreen>
                                     Icon(Icons.vibration, size: 12, color: AppColors.success),
                                     const SizedBox(width: 2),
                                     Text(
-                                      'Shake enabled',
+                                      'Shake',
                                       style: TextStyle(
                                         fontSize: 10,
                                         color: AppColors.success,
@@ -192,244 +224,214 @@ class _HomeScreenState extends State<HomeScreen>
                                   ],
                                 ),
                               ),
-                            ],
                           ],
+                        );
+                      },
+                    ),
+                    
+                    actions: [
+                      if (_isRefreshing)
+                        Container(
+                          margin: const EdgeInsets.only(right: 4),
+                          child: SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                            ),
+                          ),
+                        )
+                      else
+                        IconButton(
+                          icon: Icon(Icons.refresh, color: AppColors.textPrimary, size: 22),
+                          onPressed: () => context.read<PlaceProvider>().refresh(),
+                          padding: const EdgeInsets.all(8),
+                          constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                        ),
+                      
+                      PopupMenuButton<String>(
+                        icon: Icon(Icons.more_vert, color: AppColors.textPrimary, size: 22),
+                        padding: const EdgeInsets.all(8),
+                        onSelected: (value) async {
+                          if (value == 'sample_data') {
+                            await _createSampleData();
+                          } else if (value == 'sensor_test') {
+                            _testSensor();
+                          } else if (value == 'help') {
+                            _showHelpDialog();
+                          }
+                        },
+                        itemBuilder: (context) => [
+                          const PopupMenuItem(
+                            value: 'sample_data',
+                            child: Row(
+                              children: [
+                                Icon(Icons.data_saver_on, size: 20),
+                                SizedBox(width: 8),
+                                Text('Sample Data'),
+                              ],
+                            ),
+                          ),
+                          PopupMenuItem(
+                            value: 'sensor_test',
+                            child: Row(
+                              children: [
+                                Icon(
+                                  _sensorAvailable ? Icons.sensors : Icons.sensors_off,
+                                  color: _sensorAvailable ? AppColors.success : AppColors.error,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                Text('Sensor ${_sensorAvailable ? 'OK' : 'Off'}'),
+                              ],
+                            ),
+                          ),
+                          const PopupMenuItem(
+                            value: 'help',
+                            child: Row(
+                              children: [
+                                Icon(Icons.help_outline, size: 20),
+                                SizedBox(width: 8),
+                                Text('Help'),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                
+                body: Consumer<PlaceProvider>(
+                  builder: (context, placeProvider, child) {
+                    return Column(
+                      children: [
+                        // Search Bar
+                        Container(
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                          color: AppColors.surface,
+                          child: TextField(
+                            controller: _searchController,
+                            decoration: InputDecoration(
+                              hintText: 'Search places...',
+                              hintStyle: const TextStyle(fontSize: 14),
+                              prefixIcon: const Icon(Icons.search, color: AppColors.textSecondary, size: 20),
+                              suffixIcon: _searchController.text.isNotEmpty
+                                  ? IconButton(
+                                      icon: const Icon(Icons.clear, color: AppColors.textSecondary, size: 20),
+                                      onPressed: () {
+                                        _searchController.clear();
+                                        placeProvider.clearSearch();
+                                      },
+                                      padding: const EdgeInsets.all(8),
+                                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                    )
+                                  : null,
+                              filled: true,
+                              fillColor: AppColors.background,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide.none,
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                              isDense: true,
+                            ),
+                            style: const TextStyle(fontSize: 14),
+                            onChanged: (value) {
+                              setState(() {});
+                              placeProvider.searchPlaces(value);
+                            },
+                          ),
+                        ),
+
+                        // Filter Chips
+                        Container(
+                          height: 50,
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: ListView.builder(
+                                  scrollDirection: Axis.horizontal,
+                                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                                  itemCount: placeProvider.categories.length,
+                                  itemBuilder: (context, index) {
+                                    final category = placeProvider.categories[index];
+                                    final isSelected = placeProvider.selectedCategory == category['id'];
+                                    
+                                    return _buildFilterChip(
+                                      category['name']!,
+                                      isSelected,
+                                      () => placeProvider.setSelectedCategory(category['id']!),
+                                    );
+                                  },
+                                ),
+                              ),
+                              
+                              Container(
+                                margin: const EdgeInsets.only(right: 12),
+                                child: IconButton(
+                                  onPressed: () => _showCityFilterDialog(placeProvider),
+                                  icon: Icon(
+                                    Icons.location_city,
+                                    color: placeProvider.selectedCity != 'all' 
+                                        ? AppColors.primary 
+                                        : AppColors.textSecondary,
+                                    size: 22,
+                                  ),
+                                  padding: const EdgeInsets.all(8),
+                                  constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        // Places List
+                        Expanded(
+                          child: _buildPlacesList(placeProvider),
                         ),
                       ],
                     );
                   },
                 ),
-                actions: [
-                  if (_isRefreshing)
-                    Container(
-                      margin: const EdgeInsets.only(right: 8),
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          SizedBox(
-                            width: 12,
-                            height: 12,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                AppColors.primary,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          const Text(
-                            'Refreshing',
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: AppColors.primary,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                  else
-                    IconButton(
-                      icon: const Icon(Icons.refresh, color: AppColors.textPrimary),
-                      onPressed: () => context.read<PlaceProvider>().refresh(),
-                      tooltip: _sensorAvailable ? 'Refresh or shake device' : 'Refresh',
-                    ),
-                  
-                  // ✅ Gesture navigation hint
-                  Container(
-                    margin: const EdgeInsets.only(right: 8),
-                    child: IconButton(
-                      icon: const Icon(Icons.swipe, color: AppColors.textSecondary),
+                
+                floatingActionButton: Consumer<AuthProvider>(
+                  builder: (context, authProvider, child) {
+                    return FloatingActionButton(
                       onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: const Text('💡 Swipe left/right to navigate between tabs!'),
-                            backgroundColor: AppColors.primary,
-                            duration: const Duration(seconds: 3),
-                            behavior: SnackBarBehavior.floating,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                        );
+                        if (authProvider.isAuthenticated) {
+                          context.pushNamed(AppRoutes.addItemName);
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Please login to add places')),
+                          );
+                          context.pushNamed(AppRoutes.loginName);
+                        }
                       },
-                      tooltip: 'Swipe navigation help',
-                    ),
-                  ),
-                  
-                  PopupMenuButton<String>(
-                    icon: const Icon(Icons.more_vert, color: AppColors.textPrimary),
-                    onSelected: (value) async {
-                      if (value == 'sample_data') {
-                        await _createSampleData();
-                      } else if (value == 'sensor_test') {
-                        _testSensor();
-                      }
-                    },
-                    itemBuilder: (context) => [
-                      const PopupMenuItem(
-                        value: 'sample_data',
-                        child: Row(
-                          children: [
-                            Icon(Icons.data_saver_on),
-                            SizedBox(width: 8),
-                            Text('Create Sample Data'),
-                          ],
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: 'sensor_test',
-                        child: Row(
-                          children: [
-                            Icon(
-                              _sensorAvailable ? Icons.sensors : Icons.sensors_off,
-                              color: _sensorAvailable ? AppColors.success : AppColors.error,
-                            ),
-                            const SizedBox(width: 8),
-                            Text('Test Sensor (${_sensorAvailable ? 'Available' : 'Unavailable'})'),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                      backgroundColor: AppColors.primary,
+                      child: const Icon(Icons.add_location_alt, color: Colors.white, size: 24),
+                    );
+                  },
+                ),
               ),
-              
-              // ✅ Keep existing body with all functionality
-              body: Consumer<PlaceProvider>(
-                builder: (context, placeProvider, child) {
-                  return Column(
-                    children: [
-                      // Search Bar
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        color: AppColors.surface,
-                        child: TextField(
-                          controller: _searchController,
-                          decoration: InputDecoration(
-                            hintText: 'Search places by name, city, or category...',
-                            prefixIcon: const Icon(Icons.search, color: AppColors.textSecondary),
-                            suffixIcon: _searchController.text.isNotEmpty
-                                ? IconButton(
-                                    icon: const Icon(Icons.clear, color: AppColors.textSecondary),
-                                    onPressed: () {
-                                      _searchController.clear();
-                                      placeProvider.clearSearch();
-                                    },
-                                  )
-                                : null,
-                            filled: true,
-                            fillColor: AppColors.background,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide.none,
-                            ),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          ),
-                          onChanged: (value) {
-                            setState(() {});
-                            placeProvider.searchPlaces(value);
-                          },
-                        ),
-                      ),
-
-                      // Filter Chips Row
-                      Container(
-                        height: 60,
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: ListView.builder(
-                                scrollDirection: Axis.horizontal,
-                                padding: const EdgeInsets.symmetric(horizontal: 16),
-                                itemCount: placeProvider.categories.length,
-                                itemBuilder: (context, index) {
-                                  final category = placeProvider.categories[index];
-                                  final isSelected = placeProvider.selectedCategory == category['id'];
-                                  
-                                  return _buildFilterChip(
-                                    category['name']!,
-                                    isSelected,
-                                    () => placeProvider.setSelectedCategory(category['id']!),
-                                  );
-                                },
-                              ),
-                            ),
-                            
-                            Padding(
-                              padding: const EdgeInsets.only(right: 16),
-                              child: IconButton(
-                                onPressed: () => _showCityFilterDialog(placeProvider),
-                                icon: Icon(
-                                  Icons.location_city,
-                                  color: placeProvider.selectedCity != 'all' 
-                                      ? AppColors.primary 
-                                      : AppColors.textSecondary,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      // Places List
-                      Expanded(
-                        child: _buildPlacesList(placeProvider),
-                      ),
-                    ],
-                  );
-                },
-              ),
-              
-              floatingActionButton: Consumer<AuthProvider>(
-                builder: (context, authProvider, child) {
-                  return FloatingActionButton(
-                    onPressed: () {
-                      if (authProvider.isAuthenticated) {
-                        context.pushNamed(AppRoutes.addItemName);
-                      } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Please login to add places')),
-                        );
-                        context.pushNamed(AppRoutes.loginName);
-                      }
-                    },
-                    backgroundColor: AppColors.primary,
-                    child: const Icon(Icons.add_location_alt, color: Colors.white),
-                  );
-                },
-              ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }
 
-  void _testSensor() {
-    if (_sensorAvailable) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('✅ Sensor is working! Try shaking your device.'),
-          backgroundColor: AppColors.success,
-          duration: const Duration(seconds: 3),
-        ),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('❌ Sensor not available on this device/emulator.'),
-          backgroundColor: AppColors.error,
-          duration: const Duration(seconds: 3),
-        ),
-      );
+  String _getShortName(String fullName) {
+    if (fullName.length <= 15) return fullName;
+    
+    final parts = fullName.split(' ');
+    if (parts.isNotEmpty) {
+      return parts.first.length <= 15 ? parts.first : '${parts.first.substring(0, 12)}...';
     }
+    
+    return '${fullName.substring(0, 12)}...';
   }
 
   Widget _buildFilterChip(String label, bool isSelected, VoidCallback onTap) {
@@ -438,12 +440,13 @@ class _HomeScreenState extends State<HomeScreen>
       child: GestureDetector(
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
             color: isSelected ? AppColors.primary : AppColors.surface,
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(16),
             border: Border.all(
               color: isSelected ? AppColors.primary : AppColors.border,
+              width: 1,
             ),
           ),
           child: Text(
@@ -451,7 +454,7 @@ class _HomeScreenState extends State<HomeScreen>
             style: TextStyle(
               color: isSelected ? Colors.white : AppColors.textPrimary,
               fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-              fontSize: 13,
+              fontSize: 12,
             ),
           ),
         ),
@@ -460,14 +463,17 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Widget _buildPlacesList(PlaceProvider placeProvider) {
-    if (placeProvider.isLoading && !_isRefreshing) {
+    if (!placeProvider.isInitialized || (placeProvider.isLoading && placeProvider.places.isEmpty)) {
       return const LoadingWidget(message: 'Loading places...');
     }
 
-    if (placeProvider.errorMessage != null) {
+    if (placeProvider.errorMessage != null && placeProvider.places.isEmpty) {
       return CustomErrorWidget(
         message: placeProvider.errorMessage!,
-        onRetry: () => placeProvider.refresh(),
+        onRetry: () async {
+          await placeProvider.initialize();
+          await placeProvider.refresh();
+        },
       );
     }
 
@@ -477,7 +483,7 @@ class _HomeScreenState extends State<HomeScreen>
         title: 'No Places Found',
         message: placeProvider.searchQuery.isNotEmpty 
             ? 'No places match your search criteria.'
-            : 'No tourist places available at the moment.',
+            : 'No tourist places available. Would you like to create some sample data?',
         actionText: 'Create Sample Data',
         onAction: () => _createSampleData(),
       );
@@ -486,247 +492,193 @@ class _HomeScreenState extends State<HomeScreen>
     return RefreshIndicator(
       onRefresh: () => placeProvider.refresh(),
       child: ListView.builder(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
         itemCount: placeProvider.places.length,
         itemBuilder: (context, index) {
           final place = placeProvider.places[index];
-          return _buildGesturePlaceCard(place, index);
+          return _buildPlaceCard(place);
         },
       ),
     );
   }
 
-  // ✅ FIX: Enhanced PlaceCard with proper key and gesture handling
-  Widget _buildGesturePlaceCard(place, int index) {
+  Widget _buildPlaceCard(place) {
     return Consumer<FavoriteProvider>(
       builder: (context, favoriteProvider, child) {
         final isFavorite = favoriteProvider.isFavorite(place.id);
         
         return Container(
-          margin: const EdgeInsets.only(bottom: 16),
+          margin: const EdgeInsets.only(bottom: 12),
           child: GestureDetector(
-            // ✅ FIX: Use GestureDetector instead of Dismissible to avoid tree issues
-            onLongPress: () => _toggleFavoriteWithFeedback(place, isFavorite),
+            onLongPress: () => _toggleFavorite(place, isFavorite),
             onTap: () {
               context.pushNamed(
                 AppRoutes.itemDetailName,
                 pathParameters: {'itemId': place.id},
               );
             },
-            
-            child: _buildPlaceCard(place, isFavorite),
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    height: 160,
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: AppColors.borderLight,
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                      image: place.imageUrl.isNotEmpty
+                          ? DecorationImage(
+                              image: NetworkImage(place.imageUrl),
+                              fit: BoxFit.cover,
+                            )
+                          : null,
+                    ),
+                    child: Stack(
+                      children: [
+                        if (place.imageUrl.isEmpty)
+                          const Center(
+                            child: Icon(
+                              Icons.location_on_outlined,
+                              size: 40,
+                              color: AppColors.textLight,
+                            ),
+                          ),
+                        
+                        Positioned(
+                          top: 8,
+                          left: 8,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              place.categoryDisplayName,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                        
+                        Positioned(
+                          top: 8,
+                          right: 8,
+                          child: GestureDetector(
+                            onTap: () => _toggleFavorite(place, isFavorite),
+                            child: Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: isFavorite 
+                                    ? AppColors.primary.withOpacity(0.9)
+                                    : Colors.white.withOpacity(0.9),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                isFavorite ? Icons.favorite : Icons.favorite_border,
+                                color: isFavorite ? Colors.white : AppColors.textSecondary,
+                                size: 18,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  
+                  Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          place.name,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.textPrimary,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        
+                        Row(
+                          children: [
+                            const Icon(Icons.location_on, size: 14, color: AppColors.textSecondary),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                place.city,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: AppColors.textSecondary,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (place.rating != null) ...[
+                              const Icon(Icons.star, size: 14, color: Colors.amber),
+                              const SizedBox(width: 2),
+                              Text(
+                                place.rating!.toStringAsFixed(1),
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                        
+                        const SizedBox(height: 6),
+                        Text(
+                          place.getTruncatedDescription(60),
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: AppColors.textSecondary,
+                            height: 1.3,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         );
       },
     );
   }
 
-  Widget _buildPlaceCard(place, bool isFavorite) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Place Image
-          Container(
-            height: 200,
-            width: double.infinity,
-            decoration: BoxDecoration(
-              color: AppColors.borderLight,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-              image: place.imageUrl.isNotEmpty
-                  ? DecorationImage(
-                      image: NetworkImage(place.imageUrl),
-                      fit: BoxFit.cover,
-                    )
-                  : null,
-            ),
-            child: Stack(
-              children: [
-                if (place.imageUrl.isEmpty)
-                  const Center(
-                    child: Icon(
-                      Icons.location_on_outlined,
-                      size: 60,
-                      color: AppColors.textLight,
-                    ),
-                  ),
-                
-                // Category Badge
-                Positioned(
-                  top: 12,
-                  left: 12,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      place.categoryDisplayName,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ),
-                
-                // ✅ Enhanced Favorite Indicator
-                Positioned(
-                  top: 12,
-                  right: 12,
-                  child: GestureDetector(
-                    onTap: () => _toggleFavoriteWithFeedback(place, isFavorite),
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: isFavorite 
-                            ? AppColors.primary.withOpacity(0.9)
-                            : Colors.white.withOpacity(0.9),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        isFavorite ? Icons.favorite : Icons.favorite_border,
-                        color: isFavorite ? Colors.white : AppColors.textSecondary,
-                        size: 20,
-                      ),
-                    ),
-                  ),
-                ),
-
-                // ✅ Long press hint
-                Positioned(
-                  bottom: 8,
-                  right: 8,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.6),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Text(
-                      'Long press ❤️',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          
-          // Place Details
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  place.name,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 4),
-                
-                Row(
-                  children: [
-                    const Icon(Icons.location_on, size: 16, color: AppColors.textSecondary),
-                    const SizedBox(width: 4),
-                    Text(
-                      place.city,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                    const Spacer(),
-                    if (place.rating != null) ...[
-                      const Icon(Icons.star, size: 16, color: Colors.amber),
-                      const SizedBox(width: 4),
-                      Text(
-                        place.rating!.toStringAsFixed(1),
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                
-                const SizedBox(height: 8),
-                Text(
-                  place.getTruncatedDescription(80),
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: AppColors.textSecondary,
-                    height: 1.4,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                
-                if (place.openingHours != null) ...[
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Icon(
-                        place.isOpen ? Icons.access_time : Icons.access_time_filled,
-                        size: 16,
-                        color: place.isOpen ? AppColors.success : AppColors.error,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        place.isOpen ? 'Open • ${place.openingHours}' : 'Closed • ${place.openingHours}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: place.isOpen ? AppColors.success : AppColors.error,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ✅ FIX: Enhanced favorite toggle with proper type handling
-  Future<void> _toggleFavoriteWithFeedback(place, bool currentlyFavorite) async {
+  Future<void> _toggleFavorite(place, bool currentlyFavorite) async {
     HapticFeedback.mediumImpact();
     
     final favoriteProvider = context.read<FavoriteProvider>();
     
     try {
       if (currentlyFavorite) {
-        // ✅ FIX: Pass string ID instead of PlaceModel
         await favoriteProvider.removeFromFavorites(place.id);
       } else {
-        // ✅ FIX: Pass string ID instead of PlaceModel
         await favoriteProvider.addToFavorites(place.id);
       }
       
@@ -784,42 +736,37 @@ class _HomeScreenState extends State<HomeScreen>
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
+        backgroundColor: AppColors.surface,
         title: const Text('Filter by City'),
-        // ✅ FIX: Wrap content with proper constraints
-        content: SizedBox(
-          width: double.maxFinite,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(context).size.height * 0.6, // Max 60% of screen height
-            ),
+        content: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: double.maxFinite,
+            maxHeight: MediaQuery.of(context).size.height * 0.5,
+          ),
+          child: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
-              children: [
-                // ✅ FIX: Make the list scrollable
-                Flexible(
-                  child: SingleChildScrollView(
-                    child: Column(
-                      children: placeProvider.cities.map((city) {
-                        final isSelected = placeProvider.selectedCity == city;
-                        return ListTile(
-                          title: Text(city == 'all' ? 'All Cities' : city),
-                          leading: Radio<String>(
-                            value: city,
-                            groupValue: placeProvider.selectedCity,
-                            onChanged: (value) {
-                              placeProvider.setSelectedCity(value!);
-                              Navigator.pop(context);
-                            },
-                          ),
-                          selected: isSelected,
-                          dense: true, // ✅ FIX: More compact tiles
-                          visualDensity: VisualDensity.compact,
-                        );
-                      }).toList(),
-                    ),
+              children: placeProvider.cities.map((city) {
+                final isSelected = placeProvider.selectedCity == city;
+                return ListTile(
+                  title: Text(
+                    city == 'all' ? 'All Cities' : city,
+                    style: const TextStyle(fontSize: 14),
                   ),
-                ),
-              ],
+                  leading: Radio<String>(
+                    value: city,
+                    groupValue: placeProvider.selectedCity,
+                    onChanged: (value) {
+                      placeProvider.setSelectedCity(value!);
+                      Navigator.pop(context);
+                    },
+                  ),
+                  selected: isSelected,
+                  dense: true,
+                  visualDensity: VisualDensity.compact,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                );
+              }).toList(),
             ),
           ),
         ),
@@ -827,6 +774,68 @@ class _HomeScreenState extends State<HomeScreen>
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _testSensor() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(_sensorAvailable 
+            ? '✅ Sensor is working! Try shaking your device.'
+            : '❌ Sensor not available on this device/emulator.'),
+        backgroundColor: _sensorAvailable ? AppColors.success : AppColors.error,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  void _showHelpDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('💡 How to Use'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildHelpItem('👆', 'Tap places to view details'),
+              _buildHelpItem('❤️', 'Long press to add/remove favorites'),
+              _buildHelpItem('🔍', 'Use search to find places'),
+              _buildHelpItem('🏷️', 'Filter by category or city'),
+              _buildHelpItem('↔️', 'Swipe left/right between tabs'),
+              if (_sensorAvailable)
+                _buildHelpItem('📳', 'Shake device to refresh'),
+              _buildHelpItem('➕', 'Use + button to add new places'),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Got it!'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHelpItem(String emoji, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Text(emoji, style: const TextStyle(fontSize: 16)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(fontSize: 14),
+            ),
           ),
         ],
       ),
@@ -851,8 +860,9 @@ class _HomeScreenState extends State<HomeScreen>
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const AlertDialog(
-          content: Column(
+        builder: (context) => AlertDialog(
+          backgroundColor: AppColors.surface,
+          content: const Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               CircularProgressIndicator(),
