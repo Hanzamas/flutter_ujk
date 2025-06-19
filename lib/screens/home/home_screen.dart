@@ -161,148 +161,199 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               child: Scaffold(
                 backgroundColor: AppColors.background,
                 
-                appBar: PreferredSize(
-                  preferredSize: const Size.fromHeight(kToolbarHeight),
-                  child: AppBar(
-                    backgroundColor: AppColors.surface,
-                    elevation: 0,
-                    automaticallyImplyLeading: false,
-                    titleSpacing: 16,
-                    title: Consumer<AuthProvider>(
-                      builder: (context, authProvider, child) {
-                        return Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Text(
-                                    'Hello, ${_getShortName(authProvider.currentUser?.displayNameOrEmail ?? 'Explorer')}',
-                                    style: const TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                      color: AppColors.textPrimary,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
+                // ✅ FIX: Enhanced AppBar with proper background & colors
+                appBar: AppBar(
+                  backgroundColor: AppColors.surface, // ✅ Solid white background
+                  surfaceTintColor: Colors.transparent, // ✅ Remove Material 3 tint
+                  shadowColor: Colors.black.withOpacity(0.1), // ✅ Subtle shadow
+                  elevation: 2, // ✅ Add elevation for scroll visibility
+                  scrolledUnderElevation: 4, // ✅ Elevation when scrolled
+                  automaticallyImplyLeading: false,
+                  titleSpacing: 16,
+                  
+                  // ✅ FIX: System overlay style for status bar
+                  systemOverlayStyle: SystemUiOverlayStyle.dark.copyWith(
+                    statusBarColor: Colors.transparent,
+                    statusBarIconBrightness: Brightness.dark,
+                  ),
+                  
+                  title: Consumer<AuthProvider>(
+                    builder: (context, authProvider, child) {
+                      return Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  'Hello, ${_getShortName(authProvider.currentUser?.displayNameOrEmail ?? 'Explorer')}',
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.textPrimary, // ✅ Ensure dark text
                                   ),
-                                  const Text(
-                                    'Discover amazing places',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const Text(
+                                  'Discover amazing places',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: AppColors.textSecondary, // ✅ Ensure dark text
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
+                          ),
+                          
+                          if (_sensorAvailable)
+                            Container(
+                              margin: const EdgeInsets.only(left: 8),
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: AppColors.success.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.vibration, size: 12, color: AppColors.success),
+                                  const SizedBox(width: 2),
+                                  Text(
+                                    'Shake',
                                     style: TextStyle(
-                                      fontSize: 13,
-                                      color: AppColors.textSecondary,
+                                      fontSize: 10,
+                                      color: AppColors.success,
+                                      fontWeight: FontWeight.w500,
                                     ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ],
                               ),
                             ),
-                            
-                            if (_sensorAvailable)
-                              Container(
-                                margin: const EdgeInsets.only(left: 8),
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: AppColors.success.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.vibration, size: 12, color: AppColors.success),
-                                    const SizedBox(width: 2),
-                                    Text(
-                                      'Shake',
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        color: AppColors.success,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                  ],
+                        ],
+                      );
+                    },
+                  ),
+                  
+                  actions: [
+                    // ✅ FIX: Refresh button with proper dark color
+                    if (_isRefreshing)
+                      Container(
+                        margin: const EdgeInsets.only(right: 4),
+                        child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
+                          ),
+                        ),
+                      )
+                    else
+                      IconButton(
+                        icon: Icon(
+                          Icons.refresh, 
+                          color: AppColors.textPrimary, // ✅ Dark color
+                          size: 22,
+                        ),
+                        onPressed: () => context.read<PlaceProvider>().refresh(),
+                        padding: const EdgeInsets.all(8),
+                        constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                      ),
+                    
+                    // ✅ FIX: Three dots menu with proper dark color
+                    PopupMenuButton<String>(
+                      icon: Icon(
+                        Icons.more_vert, 
+                        color: AppColors.textPrimary, // ✅ Dark color for visibility
+                        size: 22,
+                      ),
+                      iconColor: AppColors.textPrimary, // ✅ Additional color specification
+                      padding: const EdgeInsets.all(8),
+                      color: AppColors.surface, // ✅ White popup background
+                      elevation: 8, // ✅ Proper elevation for popup
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12), // ✅ Rounded corners
+                      ),
+                      onSelected: (value) async {
+                        if (value == 'sample_data') {
+                          await _createSampleData();
+                        } else if (value == 'sensor_test') {
+                          _testSensor();
+                        } else if (value == 'help') {
+                          _showHelpDialog();
+                        }
+                      },
+                      itemBuilder: (context) => [
+                        PopupMenuItem(
+                          value: 'sample_data',
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.data_saver_on, 
+                                size: 20, 
+                                color: AppColors.primary, // ✅ Colored icon
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Sample Data',
+                                style: TextStyle(
+                                  color: AppColors.textPrimary, // ✅ Dark text
+                                  fontSize: 14,
                                 ),
                               ),
-                          ],
-                        );
-                      },
+                            ],
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 'sensor_test',
+                          child: Row(
+                            children: [
+                              Icon(
+                                _sensorAvailable ? Icons.sensors : Icons.sensors_off,
+                                color: _sensorAvailable ? AppColors.success : AppColors.error,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Sensor ${_sensorAvailable ? 'OK' : 'Off'}',
+                                style: TextStyle(
+                                  color: AppColors.textPrimary, // ✅ Dark text
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 'help',
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.help_outline, 
+                                size: 20, 
+                                color: AppColors.primary, // ✅ Colored icon
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Help',
+                                style: TextStyle(
+                                  color: AppColors.textPrimary, // ✅ Dark text
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                     
-                    actions: [
-                      if (_isRefreshing)
-                        Container(
-                          margin: const EdgeInsets.only(right: 4),
-                          child: SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
-                            ),
-                          ),
-                        )
-                      else
-                        IconButton(
-                          icon: Icon(Icons.refresh, color: AppColors.textPrimary, size: 22),
-                          onPressed: () => context.read<PlaceProvider>().refresh(),
-                          padding: const EdgeInsets.all(8),
-                          constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-                        ),
-                      
-                      PopupMenuButton<String>(
-                        icon: Icon(Icons.more_vert, color: AppColors.textPrimary, size: 22),
-                        padding: const EdgeInsets.all(8),
-                        onSelected: (value) async {
-                          if (value == 'sample_data') {
-                            await _createSampleData();
-                          } else if (value == 'sensor_test') {
-                            _testSensor();
-                          } else if (value == 'help') {
-                            _showHelpDialog();
-                          }
-                        },
-                        itemBuilder: (context) => [
-                          const PopupMenuItem(
-                            value: 'sample_data',
-                            child: Row(
-                              children: [
-                                Icon(Icons.data_saver_on, size: 20),
-                                SizedBox(width: 8),
-                                Text('Sample Data'),
-                              ],
-                            ),
-                          ),
-                          PopupMenuItem(
-                            value: 'sensor_test',
-                            child: Row(
-                              children: [
-                                Icon(
-                                  _sensorAvailable ? Icons.sensors : Icons.sensors_off,
-                                  color: _sensorAvailable ? AppColors.success : AppColors.error,
-                                  size: 20,
-                                ),
-                                const SizedBox(width: 8),
-                                Text('Sensor ${_sensorAvailable ? 'OK' : 'Off'}'),
-                              ],
-                            ),
-                          ),
-                          const PopupMenuItem(
-                            value: 'help',
-                            child: Row(
-                              children: [
-                                Icon(Icons.help_outline, size: 20),
-                                SizedBox(width: 8),
-                                Text('Help'),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
+                    const SizedBox(width: 4), // ✅ Small padding from edge
+                  ],
                 ),
-                
                 body: Consumer<PlaceProvider>(
                   builder: (context, placeProvider, child) {
                     return Column(
